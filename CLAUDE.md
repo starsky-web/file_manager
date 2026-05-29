@@ -69,4 +69,20 @@ myTest/
 
 - 文件/文件夹的上传、下载、删除、重命名
 - 目录浏览与导航
-- 无文件大小/类型限制（自用）
+- HTTP Basic Auth 密码保护
+- 上传文件大小限制 500MB
+
+## 当前进度
+
+**状态：设计阶段已完成，待实现。**
+
+- [x] 设计文档 → `docs/superpowers/specs/2026-05-29-file-manager-design.md`
+- [x] 实现计划 → `docs/superpowers/plans/2026-05-29-file-manager-plan.md`
+- [ ] 实现代码（下一步）
+
+实现按计划分为 5 个 Chunk：
+1. 基础设施 — `config.py`、`database.py`、`models.py`
+2. 业务逻辑 — `file_service.py`
+3. 路由层 — `routers/files.py`
+4. 模板与前端 — `base.html`、`style.css`、`index.html`、`_list.html`
+5. 应用组装 — `app/main.py`、根目录 `main.py`
