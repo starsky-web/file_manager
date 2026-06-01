@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+
+<nav class="navbar">
+    <div class="nav-actions">
+        <form class="upload-form"
+              hx-post="/upload"
+              hx-target="#file-list"
+              hx-encoding="multipart/form-data"
+              hx-on::after-request="document.getElementById('file-input').value = ''">
+            <input type="hidden" name="parent_id" value="{{ parent_id or '' }}">
+            <input type="file" name="file" id="file-input" required
+                   style="display:none"
+                   onchange="this.form.dispatchEvent(new Event('submit', {bubbles: true}))">
+            <button type="button" class="btn" onclick="document.getElementById('file-input').click()">
+                上传文件
+            </button>
+        </form>
+        <button class="btn" id="mkdir-btn">新建文件夹</button>
+    </div>
+</nav>
+
+<div id="error-area"></div>
+
+{% include "components/_list.html" %}
+
+<script>
+document.getElementById('mkdir-btn').addEventListener('click', function() {
+    var name = prompt('请输入文件夹名称:');
+    if (!name || !name.trim()) return;
+    var formData = new FormData();
+    formData.append('name', name.trim());
+    formData.append('parent_id', '{{ parent_id or '' }}');
+    fetch('/mkdir', { method: 'POST', body: formData,
+        headers: { 'HX-Request': 'true', 'HX-Target': 'file-list' }
+    }).then(function(r) {
+        if (r.ok) return r.text();
+        return r.text().then(function(t) { throw new Error(t); });
+    }).then(function(html) {
+        document.getElementById('file-list').outerHTML = html;
+        htmx.process(document.getElementById('file-list'));
+    }).catch(function(e) {
+        showError('创建文件夹失败: ' + e.message);
+    });
+});
+
+document.addEventListener('click', function(e) {
+    if (!e.target.matches('.rename-btn')) return;
+    var btn = e.target;
+    var fileId = btn.dataset.fileId;
+    var oldName = btn.dataset.fileName;
+    var newName = prompt('请输入新名称:', oldName);
+    if (!newName || !newName.trim()) return;
+    var formData = new FormData();
+    formData.append('new_name', newName.trim());
+    fetch('/rename/' + fileId, { method: 'PATCH', body: formData,
+        headers: { 'HX-Request': 'true', 'HX-Target': 'file-list' }
+    }).then(function(r) {
+        if (r.ok) return r.text();
+        return r.text().then(function(t) { throw new Error(t); });
+    }).then(function(html) {
+        document.getElementById('file-list').outerHTML = html;
+        htmx.process(document.getElementById('file-list'));
+    }).catch(function(e) {
+        showError('重命名失败: ' + e.message);
+    });
+});
+
+document.body.addEventListener('htmx:responseError', function(evt) {
+    var message = '操作失败';
+    try {
+        var detail = JSON.parse(evt.detail.xhr.responseText);
+        if (detail.detail) message = detail.detail;
+    } catch(_) {}
+    showError(message);
+});
+
+function showError(msg) {
+    var area = document.getElementById('error-area');
+    area.innerHTML = '<div class="error-toast">' + msg + '</div>';
+    setTimeout(function() { area.innerHTML = ''; }, 5000);
+}
+</script>
+
+{% endblock %}
