@@ -1,0 +1,73 @@
+<div id="file-list">
+    <!-- 面包屑导航 — 在 #file-list 内确保 HTMX 刷新时同步更新 -->
+    <div class="breadcrumbs">
+        {% for crumb in breadcrumbs %}
+            {% if not loop.first %}
+                <span class="sep">/</span>
+            {% endif %}
+            {% if loop.last %}
+                <span class="current">{{ crumb.name }}</span>
+            {% elif crumb.id is none %}
+                <a href="/" hx-get="/" hx-target="#file-list" hx-push-url="true">根目录</a>
+            {% else %}
+                <a href="/browse/{{ crumb.id }}" hx-get="/browse/{{ crumb.id }}" hx-target="#file-list" hx-push-url="true">{{ crumb.name }}</a>
+            {% endif %}
+        {% endfor %}
+    </div>
+
+    {% if not files %}
+        <div class="empty-state">此文件夹为空</div>
+    {% else %}
+        <table class="file-table">
+            <thead>
+                <tr>
+                    <th class="col-name">名称</th>
+                    <th class="col-size">大小</th>
+                    <th class="col-time">修改时间</th>
+                    <th class="col-actions">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in files %}
+                <tr>
+                    <td class="col-name">
+                        {% if f.is_dir %}
+                            <span class="file-icon">&#128193;</span>
+                            <a href="/browse/{{ f.id }}"
+                               hx-get="/browse/{{ f.id }}"
+                               hx-target="#file-list"
+                               hx-push-url="true"
+                               class="dir-link">{{ f.name }}</a>
+                        {% else %}
+                            <span class="file-icon">&#128196;</span>
+                            <span class="file-link">{{ f.name }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="col-size">
+                        {% if not f.is_dir %}
+                            <span class="file-size">{{ format_size(f.file_size) }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="col-time">
+                        <span class="file-time">{{ f.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                    </td>
+                    <td class="col-actions">
+                        <div class="actions">
+                            {% if not f.is_dir %}
+                                <a href="/download/{{ f.id }}" class="btn btn-sm">下载</a>
+                            {% endif %}
+                            <button class="btn btn-sm rename-btn"
+                                    data-file-id="{{ f.id }}"
+                                    data-file-name="{{ f.name }}">重命名</button>
+                            <button class="btn btn-sm btn-danger"
+                                    hx-delete="/delete/{{ f.id }}"
+                                    hx-target="#file-list"
+                                    hx-confirm="确定要删除「{{ f.name }}」吗？{% if f.is_dir %}文件夹内所有内容将被一起删除。{% endif %}">删除</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+</div>
