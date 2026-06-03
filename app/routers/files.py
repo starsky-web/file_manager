@@ -1,11 +1,13 @@
+import base64
 import logging
+import secrets
 
 from fastapi import APIRouter, Depends, Request, UploadFile, Form, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.config import MAX_UPLOAD_SIZE
+from app.config import ACCESS_PASSWORD, MAX_UPLOAD_SIZE
 from app.services.file_service import (
     get_files,
     get_file,
@@ -19,6 +21,26 @@ from app.services.file_service import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def verify_auth(request: Request):
+    """HTTP Basic Auth 依赖注入。"""
+    authorization = request.headers.get("Authorization")
+    if authorization:
+        try:
+            scheme, credentials = authorization.split(" ", 1)
+            if scheme.lower() == "basic":
+                decoded = base64.b64decode(credentials).decode("utf-8")
+                username, _, password = decoded.partition(":")
+                if username == "admin" and secrets.compare_digest(password, ACCESS_PASSWORD):
+                    return
+        except Exception:
+            pass
+    raise HTTPException(
+        status_code=401,
+        headers={"WWW-Authenticate": 'Basic realm="File Manager"'},
+        detail="Unauthorized",
+    )
 
 
 def _build_breadcrumbs(db: Session, parent_id: int | None) -> list[dict]:
@@ -38,7 +60,7 @@ def _build_breadcrumbs(db: Session, parent_id: int | None) -> list[dict]:
 
 
 @router.get("/", response_class=HTMLResponse)
-def browse_root(request: Request, db: Session = Depends(get_db)):
+def browse_root(request: Request, db: Session = Depends(get_db), _=Depends(verify_auth)):
     files = get_files(db, None)
     breadcrumbs = _build_breadcrumbs(db, None)
     return request.app.state.templates.TemplateResponse(
@@ -54,7 +76,7 @@ def browse_root(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/browse/{dir_id}", response_class=HTMLResponse)
-def browse_dir(dir_id: int, request: Request, db: Session = Depends(get_db)):
+def browse_dir(dir_id: int, request: Request, db: Session = Depends(get_db), _=Depends(verify_auth)):
     file_record = get_file(db, dir_id)
     if file_record is None or not file_record.is_dir:
         raise HTTPException(status_code=404, detail="文件夹不存在")
@@ -73,7 +95,7 @@ def browse_dir(dir_id: int, request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/download/{file_id}")
-def download_file(file_id: int, db: Session = Depends(get_db)):
+def download_file(file_id: int, db: Session = Depends(get_db), _=Depends(verify_auth)):
     file_record = get_file(db, file_id)
     if file_record is None or file_record.is_dir:
         raise HTTPException(status_code=404, detail="文件不存在")
@@ -93,6 +115,7 @@ async def upload(
     file: UploadFile,
     parent_id: int | None = Form(None),
     db: Session = Depends(get_db),
+    _=Depends(verify_auth),
 ):
     try:
         upload_file(db, file, parent_id)
@@ -102,7 +125,7 @@ async def upload(
 
 
 @router.delete("/delete/{file_id}", response_class=HTMLResponse)
-def delete(file_id: int, request: Request, db: Session = Depends(get_db)):
+def delete(file_id: int, request: Request, db: Session = Depends(get_db), _=Depends(verify_auth)):
     try:
         parent_id = delete_file(db, file_id)
     except LookupError:
@@ -116,6 +139,7 @@ async def rename(
     request: Request,
     new_name: str = Form(...),
     db: Session = Depends(get_db),
+    _=Depends(verify_auth),
 ):
     try:
         file_record = rename_file(db, file_id, new_name)
@@ -132,6 +156,7 @@ async def mkdir(
     name: str = Form(...),
     parent_id: int | None = Form(None),
     db: Session = Depends(get_db),
+    _=Depends(verify_auth),
 ):
     try:
         create_dir(db, name, parent_id)

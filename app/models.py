@@ -16,5 +16,5 @@ class File(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
-    children = relationship("File", backref="parent", remote_side=[id],
-                            cascade="all, delete", passive_deletes=True)
+    parent = relationship("File", remote_side=[id], back_populates="children")
+    children = relationship("File", back_populates="parent", cascade="all, delete", passive_deletes=True)
