@@ -161,3 +161,171 @@ myTest/
 - 部署到云服务器
 - 添加文件预览功能
 - 添加拖拽上传
+
+## 部署方案（Ubuntu 22.04）
+
+### 架构
+
+```
+互联网 → 服务器IP:8000 → uvicorn (0.0.0.0:8000) → FastAPI 应用
+                                              ↓
+                                    SQLite (data.db) + uploads/
+```
+
+- uvicorn 监听 `0.0.0.0:8000`，直接对外服务
+- systemd 守护进程，崩溃自动重启，开机自启
+- UFW 防火墙仅开放必要端口
+
+### 服务器目录规划
+
+```
+/opt/file-manager/          # 项目根目录
+├── app/                    # 应用代码
+├── main.py                 # 开发入口（部署不用）
+├── requirements.txt
+├── .venv/                  # Python 虚拟环境
+├── data.db                 # SQLite 数据库（运行时自动生成）
+├── uploads/                # 上传文件存储（运行时自动生成）
+└── deploy/
+    └── file-manager.service  # systemd 服务配置文件
+```
+
+### 部署步骤
+
+#### 1. 服务器环境准备
+
+```bash
+# 更新系统包
+sudo apt update && sudo apt upgrade -y
+
+# 安装 Python 3.12
+sudo add-apt-repository ppa:deadsnakes/ppa -y
+sudo apt install python3.12 python3.12-venv git -y
+
+# 安装并配置防火墙
+sudo ufw allow 22/tcp      # SSH
+sudo ufw allow 8000/tcp    # 文件管理系统
+sudo ufw enable
+```
+
+#### 2. 拉取代码
+
+```bash
+sudo mkdir -p /opt/file-manager
+sudo chown $USER:$USER /opt/file-manager
+git clone <仓库地址> /opt/file-manager
+cd /opt/file-manager
+```
+
+#### 3. 创建虚拟环境并安装依赖
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+#### 4. 创建 systemd 服务
+
+创建服务文件 `deploy/file-manager.service`（已在仓库中）：
+
+```ini
+[Unit]
+Description=文件管理系统
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/file-manager
+ExecStart=/opt/file-manager/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+安装并启动服务：
+
+```bash
+# 复制服务文件
+sudo cp /opt/file-manager/deploy/file-manager.service /etc/systemd/system/
+
+# 重载 systemd 配置
+sudo systemctl daemon-reload
+
+# 设置目录权限
+sudo chown -R www-data:www-data /opt/file-manager
+
+# 启动服务
+sudo systemctl start file-manager
+
+# 设置开机自启
+sudo systemctl enable file-manager
+
+# 查看运行状态
+sudo systemctl status file-manager
+```
+
+#### 5. 验证部署
+
+```bash
+# 检查服务状态
+sudo systemctl status file-manager
+
+# 查看日志
+sudo journalctl -u file-manager -f
+
+# 访问测试
+curl http://localhost:8000
+```
+
+浏览器访问 `http://<服务器IP>:8000` 即可使用。
+
+### 日常运维命令
+
+```bash
+# 查看服务状态
+sudo systemctl status file-manager
+
+# 重启服务（代码更新后）
+sudo systemctl restart file-manager
+
+# 查看实时日志
+sudo journalctl -u file-manager -f
+
+# 查看最近 50 条日志
+sudo journalctl -u file-manager -n 50
+
+# 停止服务
+sudo systemctl stop file-manager
+
+# 禁用开机自启
+sudo systemctl disable file-manager
+```
+
+### 更新部署流程
+
+```bash
+cd /opt/file-manager
+sudo systemctl stop file-manager
+git pull
+source .venv/bin/activate
+pip install -r requirements.txt
+sudo systemctl start file-manager
+```
+
+### 备份建议
+
+定期备份以下两个目录/文件：
+
+- `/opt/file-manager/uploads/` — 所有上传的文件
+- `/opt/file-manager/data.db` — 文件元数据库
+
+```bash
+# 示例备份脚本
+tar -czf backup-$(date +%Y%m%d).tar.gz -C /opt/file-manager uploads data.db
+```
