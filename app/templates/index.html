@@ -3,12 +3,11 @@
 
 <nav class="navbar">
     <div class="nav-actions">
-        <form class="upload-form"
+        <form id="upload-form" class="upload-form"
               hx-post="/upload"
               hx-target="#file-list"
               hx-encoding="multipart/form-data"
               hx-on::after-request="document.getElementById('file-input').value = ''">
-            <input type="hidden" name="parent_id" value="{{ parent_id or '' }}">
             <input type="file" name="file" id="file-input" required
                    style="display:none"
                    onchange="this.form.dispatchEvent(new Event('submit', {bubbles: true}))">
@@ -30,7 +29,8 @@ document.getElementById('mkdir-btn').addEventListener('click', function() {
     if (!name || !name.trim()) return;
     var formData = new FormData();
     formData.append('name', name.trim());
-    formData.append('parent_id', '{{ parent_id or '' }}');
+    var parentId = document.getElementById('file-list').dataset.parentId;
+    if (parentId) formData.append('parent_id', parentId);
     fetch('/mkdir', { method: 'POST', body: formData,
         headers: { 'HX-Request': 'true', 'HX-Target': 'file-list' }
     }).then(function(r) {

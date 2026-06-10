@@ -2,15 +2,14 @@ import requests
 import sys
 
 BASE = "http://localhost:8000"
-AUTH = ("admin", "admin")
 passed = 0
 failed = 0
 
-def test(name, expected_status, method="get", path="/", auth=AUTH, **kwargs):
+def test(name, expected_status, method="get", path="/", **kwargs):
     global passed, failed
     url = f"{BASE}{path}"
     try:
-        resp = requests.request(method, url, auth=auth, **kwargs)
+        resp = requests.request(method, url, **kwargs)
         status = resp.status_code
         if status == expected_status:
             print(f"  PASS {name} (status={status})")
@@ -40,35 +39,32 @@ def test_contains(name, text, **kwargs):
 
 print("=== File Manager E2E Tests ===\n")
 
-# 1. 401
-test("1. Unauthorized", 401, auth=None)
+# 1. 无认证直接访问
+test("1. Root page (no auth)", 200)
 
-# 2. 200
-test("2. Root page", 200)
-
-# 3. Create folder
-test_contains("3. Create folder", "TestFolder",
+# 2. Create folder
+test_contains("2. Create folder", "TestFolder",
     method="post", path="/mkdir", data={"name": "TestFolder"})
 
-# 4. Upload file
-test_contains("4. Upload file", "test",
+# 3. Upload file
+test_contains("3. Upload file", "test",
     method="post", path="/upload", files={"file": ("test.txt", b"hello world\n")})
 
-# 5. Download
-test("5. Download file", 200, path="/download/2")
+# 4. Download
+test("4. Download file", 200, path="/download/2")
 
-# 6. Rename
-test_contains("6. Rename file", "renamed",
+# 5. Rename
+test_contains("5. Rename file", "renamed",
     method="patch", path="/rename/2", data={"new_name": "renamed.txt"})
 
-# 7. Delete
-test("7. Delete file", 200, method="delete", path="/delete/2")
+# 6. Delete
+test("6. Delete file", 200, method="delete", path="/delete/2")
 
-# 8. 404
-test("8. Not found", 404, path="/browse/99999")
+# 7. 404
+test("7. Not found", 404, path="/browse/99999")
 
-# 9. 409
-test("9. Duplicate folder", 409,
+# 8. 409
+test("8. Duplicate folder", 409,
     method="post", path="/mkdir", data={"name": "TestFolder"})
 
 print(f"\n=== Results: {passed} passed, {failed} failed ===")

@@ -1,4 +1,5 @@
-<div id="file-list">
+<div id="file-list" data-parent-id="{{ parent_id if parent_id is not none else '' }}">
+    {% if parent_id is not none %}<input type="hidden" name="parent_id" value="{{ parent_id }}" form="upload-form">{% endif %}
     <!-- 面包屑导航 — 在 #file-list 内确保 HTMX 刷新时同步更新 -->
     <div class="breadcrumbs">
         {% for crumb in breadcrumbs %}
