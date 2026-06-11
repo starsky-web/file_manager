@@ -54,7 +54,13 @@ def get_file_path(file: File) -> Path:
         current = current.parent
         depth += 1
     parts.reverse()
-    return Path(UPLOAD_DIR).joinpath(*parts)
+    path = Path(UPLOAD_DIR).joinpath(*parts)
+    # 向后兼容：如果拼接路径不存在，尝试旧版扁平路径
+    if not path.exists() and file.stored_name:
+        flat_path = Path(UPLOAD_DIR) / file.stored_name
+        if flat_path.exists():
+            return flat_path
+    return path
 
 
 def check_name_conflict(db: Session, name: str, parent_id: Optional[int],

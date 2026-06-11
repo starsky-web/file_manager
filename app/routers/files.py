@@ -154,4 +154,4 @@ def _render_list_snippet(request: Request, db: Session, parent_id: int | None) -
         breadcrumbs=breadcrumbs,
         format_size=format_size,
     )
-    return HTMLResponse(html)
+    return HTMLResponse(html, headers={"HX-Reswap": "outerHTML"})
