@@ -78,7 +78,21 @@ def upload_file(db: Session, upload_file, parent_id: Optional[int]) -> File:
         raise ValueError(f"同名文件已存在: {safe_name}")
 
     stored_name = uuid.uuid4().hex
-    file_path = Path(UPLOAD_DIR) / stored_name
+
+    # 根据 parent 链构建物理路径，与 get_file_path 保持一致
+    parts = [stored_name]
+    current_id = parent_id
+    depth = 0
+    while current_id is not None and depth < 50:
+        parent = get_file(db, current_id)
+        if parent is None:
+            break
+        parts.append(parent.stored_name or parent.name)
+        current_id = parent.parent_id
+        depth += 1
+    parts.reverse()
+    file_path = Path(UPLOAD_DIR).joinpath(*parts)
+
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
     content = upload_file.file.read()

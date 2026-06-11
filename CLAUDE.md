@@ -309,13 +309,77 @@ sudo systemctl disable file-manager
 
 ### 更新部署流程
 
+#### 数据保留说明
+
+更新操作**不会**影响已有数据，因为 `uploads/` 和 `data.db` 都不在 Git 仓库中（已被 `.gitignore` 忽略），`git pull` 只更新代码文件。
+
+| 数据 | 路径 | git pull 会影响？ |
+|------|------|:---:|
+| 上传的文件 | `uploads/` | 否 |
+| 文件元数据库 | `data.db` | 否 |
+| 应用代码 | `app/`, `main.py` 等 | 是 |
+
+#### 标准更新流程
+
 ```bash
 cd /opt/file-manager
+
+# 1. 查看当前状态，确认没有本地未提交的改动
+git status
+
+# 2. 更新前备份（安全第一）
+tar -czf ../backups/backup-$(date +%Y%m%d-%H%M%S).tar.gz uploads data.db
+
+# 3. 停止服务
 sudo systemctl stop file-manager
+
+# 4. 拉取最新代码
 git pull
+
+# 5. 更新依赖（如有新增）
 source .venv/bin/activate
 pip install -r requirements.txt
+
+# 6. 启动服务
 sudo systemctl start file-manager
+
+# 7. 确认运行正常
+sudo systemctl status file-manager
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8000
+# 应返回 200
+```
+
+#### 如果更新后服务无法启动
+
+```bash
+# 查看错误日志
+sudo journalctl -u file-manager -n 50 --no-pager
+
+# 回滚代码到上一个版本
+git log --oneline -5          # 找到之前正常的 commit
+git reset --hard <commit>     # 回到那个 commit
+
+# 重启服务
+sudo systemctl restart file-manager
+
+# 如果数据库被破坏（极少见），恢复备份
+tar -xzf ../backups/backup-YYYYMMDD-HHMMSS.tar.gz -C /opt/file-manager
+```
+
+#### 如果 models.py 有数据库结构变更
+
+SQLite 不支持 ALTER COLUMN 等复杂迁移，如果新版本改了数据库表结构：
+
+```bash
+# 方案 A：停服后手动重建（简单粗暴，会丢失数据）
+sudo systemctl stop file-manager
+rm data.db
+sudo systemctl start file-manager   # 启动时会自动建表
+
+# 方案 B：保留旧数据（推荐）
+# 1. 先备份 data.db
+# 2. 用 sqlite3 或 Python 脚本手动执行 ALTER TABLE 等迁移
+# 3. 确认新表结构正确后再启动服务
 ```
 
 ### 备份建议

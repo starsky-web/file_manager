@@ -40,6 +40,8 @@ def _build_breadcrumbs(db: Session, parent_id: int | None) -> list[dict]:
 def browse_root(request: Request, db: Session = Depends(get_db)):
     files = get_files(db, None)
     breadcrumbs = _build_breadcrumbs(db, None)
+    if request.headers.get("HX-Request"):
+        return _render_list_snippet(request, db, None)
     return request.app.state.templates.TemplateResponse(
         "index.html",
         {
@@ -59,6 +61,8 @@ def browse_dir(dir_id: int, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="文件夹不存在")
     files = get_files(db, dir_id)
     breadcrumbs = _build_breadcrumbs(db, dir_id)
+    if request.headers.get("HX-Request"):
+        return _render_list_snippet(request, db, dir_id)
     return request.app.state.templates.TemplateResponse(
         "index.html",
         {
