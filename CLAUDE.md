@@ -252,7 +252,7 @@ WantedBy=multi-user.target
 
 ```bash
 # 复制服务文件
-sudo cp /opt/file-manager/deploy/file-manager.service /etc/systemd/system/
+sudo cp /opt/file-manager/deploy/file_manager.service /etc/systemd/system/
 
 # 重载 systemd 配置
 sudo systemctl daemon-reload
