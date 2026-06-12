@@ -136,6 +136,11 @@ async def mkdir(
     parent_id: int | None = Form(None),
     db: Session = Depends(get_db),
 ):
+    # 验证 parent_id 对应的记录存在且是文件夹
+    if parent_id is not None:
+        parent_record = get_file(db, parent_id)
+        if parent_record is None or not parent_record.is_dir:
+            raise HTTPException(status_code=400, detail="目标文件夹不存在")
     try:
         create_dir(db, name, parent_id)
     except ValueError as e:

@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -14,22 +15,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="文件管理系统")
+# 基于当前文件位置计算绝对路径，避免依赖工作目录
+_BASE_DIR = Path(__file__).resolve().parent
 
-# 配置 Jinja2 模板引擎
-templates = Jinja2Templates(directory="app/templates")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+    init_db()
+    logger.info(f"File manager started. Upload dir: {UPLOAD_DIR}")
+    yield
+
+
+app = FastAPI(title="文件管理系统", lifespan=lifespan)
+
+# 配置 Jinja2 模板引擎（使用绝对路径）
+templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 app.state.templates = templates
 
 # 注册路由
 from app.routers import files  # noqa: E402
 app.include_router(files.router)
 
-# 挂载静态文件（在路由之后）
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
-
-@app.on_event("startup")
-def startup():
-    Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
-    init_db()
-    logger.info(f"File manager started. Upload dir: {UPLOAD_DIR}")
+# 挂载静态文件（在路由之后，使用绝对路径）
+app.mount("/static", StaticFiles(directory=str(_BASE_DIR / "static")), name="static")

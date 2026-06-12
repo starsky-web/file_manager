@@ -77,8 +77,11 @@ document.body.addEventListener('htmx:responseError', function(evt) {
 
 function showError(msg) {
     var area = document.getElementById('error-area');
-    area.innerHTML = '<div class="error-toast">' + msg + '</div>';
-    setTimeout(function() { area.innerHTML = ''; }, 5000);
+    var toast = document.createElement('div');
+    toast.className = 'error-toast';
+    toast.textContent = msg;
+    area.appendChild(toast);
+    setTimeout(function() { toast.remove(); }, 5000);
 }
 </script>
 

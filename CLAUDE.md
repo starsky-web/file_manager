@@ -11,6 +11,70 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **SQLite** 存储文件元数据，文件直接存磁盘
 - 单用户模式，无需登录
 
+## 项目架构
+
+### 整体架构：三层分离 + 模板渲染
+
+```
+浏览器
+  │
+  │ HTTP / HTMX
+  ▼
+┌─────────────────────────────────────────────┐
+│  路由层 (app/routers/files.py)               │
+│  接收请求 → 调用 Service → 返回 HTML/文件     │
+└──────────────┬──────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────┐
+│  业务逻辑层 (app/services/file_service.py)   │
+│  文件 CRUD、路径拼接、名称清洗、大小格式化     │
+└──────────────┬──────────────────────────────┘
+               │
+               ▼
+┌──────────────────────┬──────────────────────┐
+│  数据层               │  文件系统              │
+│  SQLAlchemy + SQLite │  uploads/ 磁盘存储     │
+│  (元数据)             │  (物理文件)            │
+└──────────────────────┴──────────────────────┘
+```
+
+### 核心设计决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| **前后端交互** | HTMX + Jinja2 服务端渲染 | 无需 SPA 框架，局部刷新即可 |
+| **文件存储** | 元数据入 DB，文件存磁盘 | SQLite 存元数据，磁盘存大文件，各司其职 |
+| **目录结构** | 自引用树形模型 | `File.parent_id → File.id`，支持无限层级文件夹 |
+| **文件命名** | UUID 存储名 + 原始显示名 | 避免磁盘路径冲突和特殊字符问题 |
+| **单用户模式** | 无需登录 | 自用工具，简化架构 |
+
+### 请求流转（以"浏览目录"为例）
+
+```
+GET /browse/{dir_id}
+  → routers/files.py: 调用 file_service.get_files(dir_id)
+    → file_service.py: 查 DB 获取文件列表 + 拼面包屑
+      → models.py: File 模型查询（文件夹在前，按名称排序）
+  → routers/files.py: 渲染 _list.html 片段
+  → 返回 HTML 片段 → HTMX 替换 #file-list 区域
+```
+
+### 数据模型（树形结构）
+
+```
+File
+├── id            (主键)
+├── name          (显示名，如"报告.pdf")
+├── stored_name   (UUID 物理名，如"550e8400-...")
+├── is_dir        (0=文件 / 1=文件夹)
+├── parent_id     (外键 → File.id，自引用)
+├── file_size
+├── created_at / updated_at
+├── parent        (关系：指向父目录)
+└── children      (关系：子文件/文件夹，级联删除)
+```
+
 ## 常用命令
 
 ```bash
@@ -179,7 +243,7 @@ myTest/
 ### 服务器目录规划
 
 ```
-/opt/file-manager/          # 项目根目录
+/opt/file_manager/           # 项目根目录
 ├── app/                    # 应用代码
 ├── main.py                 # 开发入口（部署不用）
 ├── requirements.txt
@@ -187,7 +251,7 @@ myTest/
 ├── data.db                 # SQLite 数据库（运行时自动生成）
 ├── uploads/                # 上传文件存储（运行时自动生成）
 └── deploy/
-    └── file-manager.service  # systemd 服务配置文件
+    └── file_manager.service  # systemd 服务配置文件
 ```
 
 ### 部署步骤
@@ -200,7 +264,7 @@ sudo apt update && sudo apt upgrade -y
 
 # 安装 Python 3.12
 sudo add-apt-repository ppa:deadsnakes/ppa -y
-sudo apt install python3.12 python3.12-venv git -y
+sudo apt install python3.12 python3.12-venv python3.12-dev git -y
 
 # 安装并配置防火墙
 sudo ufw allow 22/tcp      # SSH
@@ -211,10 +275,10 @@ sudo ufw enable
 #### 2. 拉取代码
 
 ```bash
-sudo mkdir -p /opt/file-manager
-sudo chown $USER:$USER /opt/file-manager
-git clone <仓库地址> /opt/file-manager
-cd /opt/file-manager
+sudo mkdir -p /opt/file_manager
+sudo chown $USER:$USER /opt/file_manager
+git clone <仓库地址> /opt/file_manager
+cd /opt/file_manager
 ```
 
 #### 3. 创建虚拟环境并安装依赖
@@ -227,7 +291,7 @@ pip install -r requirements.txt
 
 #### 4. 创建 systemd 服务
 
-创建服务文件 `deploy/file-manager.service`（已在仓库中）：
+创建服务文件 `deploy/file_manager.service`（已在仓库中）：
 
 ```ini
 [Unit]
@@ -237,8 +301,8 @@ After=network.target
 [Service]
 User=www-data
 Group=www-data
-WorkingDirectory=/opt/file-manager
-ExecStart=/opt/file-manager/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+WorkingDirectory=/opt/file_manager
+ExecStart=/opt/file_manager/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -252,32 +316,33 @@ WantedBy=multi-user.target
 
 ```bash
 # 复制服务文件
-sudo cp /opt/file-manager/deploy/file_manager.service /etc/systemd/system/
+sudo cp /opt/file_manager/deploy/file_manager.service /etc/systemd/system/
 
 # 重载 systemd 配置
 sudo systemctl daemon-reload
 
-# 设置目录权限
-sudo chown -R www-data:www-data /opt/file-manager
+# 设置目录权限：仅将运行时数据目录给 www-data，代码和虚拟环境保持当前用户所有
+sudo chown www-data:www-data /opt/file_manager/uploads /opt/file_manager/data.db 2>/dev/null || true
+sudo chown -R www-data:www-data /opt/file_manager/uploads
 
 # 启动服务
-sudo systemctl start file-manager
+sudo systemctl start file_manager
 
 # 设置开机自启
-sudo systemctl enable file-manager
+sudo systemctl enable file_manager
 
 # 查看运行状态
-sudo systemctl status file-manager
+sudo systemctl status file_manager
 ```
 
 #### 5. 验证部署
 
 ```bash
 # 检查服务状态
-sudo systemctl status file-manager
+sudo systemctl status file_manager
 
 # 查看日志
-sudo journalctl -u file-manager -f
+sudo journalctl -u file_manager -f
 
 # 访问测试
 curl http://localhost:8000
@@ -289,22 +354,22 @@ curl http://localhost:8000
 
 ```bash
 # 查看服务状态
-sudo systemctl status file-manager
+sudo systemctl status file_manager
 
 # 重启服务（代码更新后）
-sudo systemctl restart file-manager
+sudo systemctl restart file_manager
 
 # 查看实时日志
-sudo journalctl -u file-manager -f
+sudo journalctl -u file_manager -f
 
 # 查看最近 50 条日志
-sudo journalctl -u file-manager -n 50
+sudo journalctl -u file_manager -n 50
 
 # 停止服务
-sudo systemctl stop file-manager
+sudo systemctl stop file_manager
 
 # 禁用开机自启
-sudo systemctl disable file-manager
+sudo systemctl disable file_manager
 ```
 
 ### 更新部署流程
@@ -322,16 +387,17 @@ sudo systemctl disable file-manager
 #### 标准更新流程
 
 ```bash
-cd /opt/file-manager
+cd /opt/file_manager
 
 # 1. 查看当前状态，确认没有本地未提交的改动
 git status
 
 # 2. 更新前备份（安全第一）
-tar -czf ../backups/backup-$(date +%Y%m%d-%H%M%S).tar.gz uploads data.db
+mkdir -p /opt/backups
+tar -czf /opt/backups/backup-$(date +%Y%m%d-%H%M%S).tar.gz uploads data.db
 
 # 3. 停止服务
-sudo systemctl stop file-manager
+sudo systemctl stop file_manager
 
 # 4. 拉取最新代码
 git pull
@@ -341,10 +407,10 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # 6. 启动服务
-sudo systemctl start file-manager
+sudo systemctl start file_manager
 
 # 7. 确认运行正常
-sudo systemctl status file-manager
+sudo systemctl status file_manager
 curl -s -o /dev/null -w "%{http_code}" http://localhost:8000
 # 应返回 200
 ```
@@ -353,17 +419,17 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:8000
 
 ```bash
 # 查看错误日志
-sudo journalctl -u file-manager -n 50 --no-pager
+sudo journalctl -u file_manager -n 50 --no-pager
 
 # 回滚代码到上一个版本
 git log --oneline -5          # 找到之前正常的 commit
 git reset --hard <commit>     # 回到那个 commit
 
 # 重启服务
-sudo systemctl restart file-manager
+sudo systemctl restart file_manager
 
 # 如果数据库被破坏（极少见），恢复备份
-tar -xzf ../backups/backup-YYYYMMDD-HHMMSS.tar.gz -C /opt/file-manager
+tar -xzf /opt/backups/backup-YYYYMMDD-HHMMSS.tar.gz -C /opt/file_manager
 ```
 
 #### 如果 models.py 有数据库结构变更
@@ -372,9 +438,9 @@ SQLite 不支持 ALTER COLUMN 等复杂迁移，如果新版本改了数据库�
 
 ```bash
 # 方案 A：停服后手动重建（简单粗暴，会丢失数据）
-sudo systemctl stop file-manager
+sudo systemctl stop file_manager
 rm data.db
-sudo systemctl start file-manager   # 启动时会自动建表
+sudo systemctl start file_manager   # 启动时会自动建表
 
 # 方案 B：保留旧数据（推荐）
 # 1. 先备份 data.db
@@ -386,10 +452,10 @@ sudo systemctl start file-manager   # 启动时会自动建表
 
 定期备份以下两个目录/文件：
 
-- `/opt/file-manager/uploads/` — 所有上传的文件
-- `/opt/file-manager/data.db` — 文件元数据库
+- `/opt/file_manager/uploads/` — 所有上传的文件
+- `/opt/file_manager/data.db` — 文件元数据库
 
 ```bash
 # 示例备份脚本
-tar -czf backup-$(date +%Y%m%d).tar.gz -C /opt/file-manager uploads data.db
+tar -czf backup-$(date +%Y%m%d).tar.gz -C /opt/file_manager uploads data.db
 ```
